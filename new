@@ -1,0 +1,201 @@
+#! /bin/bash
+#
+#-----------------------------------------------------------------------
+#  Copyright (c) 2000-2005 Silicon Graphics, Inc.  All Rights Reserved.
+#
+# This program is free software; you can redistribute it and/or
+# modify it under the terms of the GNU General Public License as
+# published by the Free Software Foundation.
+#
+# This program is distributed in the hope that it would be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU General Public License for more details.
+#
+# You should have received a copy of the GNU General Public License
+# along with this program; if not, write the Free Software Foundation,
+# Inc.,  51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
+#
+#-----------------------------------------------------------------------
+#
+# Make a new test
+#
+
+# generic initialization
+iam=new
+. ./common.rc
+
+trap "rm -f /tmp/$$.; exit" 0 1 2 3 15
+
+_cleanup()
+{
+    :
+}
+
+# fqdn for localhost
+_get_fqdn()
+{
+    NSLOOKUP_PROG="`set_prog_path nslookup`"
+    if [ "$NSLOOKUP_PROG" = "" ]; then
+	getent hosts `uname -n` | awk '{print $2}'
+    else
+	$NSLOOKUP_PROG `hostname` | $AWK_PROG '{ if ($1 == "Name:") print $2 }'
+    fi
+}
+
+if [ ! -f group ]
+then
+    echo "Creating the group index ..."
+    cat <<'End-of-File' >group
+# QA groups control
+#
+# define groups and default group owners
+# do not start group name with a digit
+#
+
+# catch-all
+#
+other		some-user-login
+
+# test-group association ... one line per test
+#
+End-of-File
+fi
+
+if [ ! -w group ]
+then
+    chmod u+w group
+    echo "Warning: making the index file \"group\" writeable"
+fi
+
+if make
+then
+    :
+else
+    echo "Warning: make failed -- some tests may be missing"
+fi
+
+last=`grep '^[0-9][0-9]* ' group | sort | tail -1 | sed -e 's/[ 	].*//'`
+# get rid of leading 0s as can be interpreted as octal
+last=`echo $last | sed 's/^0*//'`
+id=`$AWK_PROG </dev/null 'BEGIN{printf "%03d\n",'$last'+1}'`
+echo "Next test is $id"
+
+if [ -f $id ]
+then
+    echo "Error: test $id already exists!"
+    _cleanup
+    exit 1
+fi
+
+echo -n "Creating skeletal script for you to edit ..."
+
+year=`date +%Y`
+
+cat <<End-of-File >$id
+#! /bin/bash
+# FS QA Test No. $id
+#
+# what am I here for?
+#
+#-----------------------------------------------------------------------
+# Copyright (c) $year YOUR NAME HERE.  All Rights Reserved.
+#
+# This program is free software; you can redistribute it and/or
+# modify it under the terms of the GNU General Public License as
+# published by the Free Software Foundation.
+#
+# This program is distributed in the hope that it would be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU General Public License for more details.
+#
+# You should have received a copy of the GNU General Public License
+# along with this program; if not, write the Free Software Foundation,
+# Inc.,  51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
+#-----------------------------------------------------------------------
+#
+# creator
+owner=$USER@`_get_fqdn`
+
+seq=\`basename \$0\`
+echo "QA output created by \$seq"
+
+here=\`pwd\`
+tmp=/tmp/\$\$
+status=1	# failure is the default!
+trap "_cleanup; exit \\\$status" 0 1 2 3 15
+
+_cleanup()
+{
+    cd /
+    rm -f \$tmp.*
+}
+
+# get standard environment, filters and checks
+. ./common.rc
+. ./common.filter
+
+# real QA test starts here
+
+# Modify as appropriate.
+_supported_fs generic
+_supported_os IRIX Linux
+
+# if error
+exit
+
+# optional stuff if your test has verbose output to help resolve problems
+#echo
+#echo "If failure, check \$seq.full (this) and \$seq.full.ok (reference)"
+
+# success, all done
+status=0
+exit
+End-of-File
+
+sleep 2		# latency to read messages to this point
+echo ""
+
+chmod 755 $id
+${EDITOR-vi} $id
+
+if [ $# -eq 0 ]
+then
+    while true
+    do
+	echo -n "Add to group(s) [other] (? for list): "
+	read ans
+	[ -z "$ans" ] && ans=other
+	if [ "X$ans" = "X?" ]
+	then
+	    $AWK_PROG <group '
+BEGIN		{ text = "# ???" }
+/^[a-z]/	{ printf "%-16.16s %s\n",$1,text; text = "# ???"; next }
+NF < 2		{ next }
+		{ text = $0 }' \
+	    | sort
+	else
+	    break
+	fi
+    done
+else
+    # expert mode, groups are on the command line
+    #
+    for g in $*
+    do
+	if grep "^$g[ 	]" group >/dev/null
+	then
+	    :
+	else
+	    echo "Warning: group \"$g\" not defined in ./group"
+	fi
+    done
+    ans="$*"
+fi
+
+echo -n "Adding $id to group index ..."
+echo "$id $ans" >>group
+echo " done."
+
+exit 0

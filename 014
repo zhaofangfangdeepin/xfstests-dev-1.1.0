@@ -1,0 +1,74 @@
+#! /bin/bash
+# FS QA Test No. 014
+#
+# truncfile
+#
+#-----------------------------------------------------------------------
+# Copyright (c) 2000-2001 Silicon Graphics, Inc.  All Rights Reserved.
+#
+# This program is free software; you can redistribute it and/or
+# modify it under the terms of the GNU General Public License as
+# published by the Free Software Foundation.
+#
+# This program is distributed in the hope that it would be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU General Public License for more details.
+#
+# You should have received a copy of the GNU General Public License
+# along with this program; if not, write the Free Software Foundation,
+# Inc.,  51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
+#
+#-----------------------------------------------------------------------
+#
+# creator
+owner=dxm@sgi.com
+
+seq=`basename $0`
+echo "QA output created by $seq"
+
+here=`pwd`
+tmp=/tmp/$$
+status=0	# success is the default!
+trap "_cleanup; exit \$status" 0 1 2 3 15
+
+_cleanup()
+{
+    cd /
+    rm -f $tmp.*
+    rm -rf $testdir/truncfile.$$.*
+    _cleanup_testdir
+}
+
+# get standard environment, filters and checks
+. ./common.rc
+. ./common.filter
+
+_supported_fs generic
+_supported_os IRIX Linux
+
+_require_sparse_files
+_setup_testdir
+
+# ensure EOF preallocation doesn't massively extend the runtime of this test
+# by limiting the amount of preallocation and therefore the amount of blocks
+# zeroed during the truncfile test run.
+if [ "$FSTYP" == "xfs" ]; then
+	umount $TEST_DIR
+	_test_mount -o allocsize=64k
+fi
+
+echo "brevity is wit..."
+
+echo "------"
+echo "test 1"
+echo "------"
+if ! src/truncfile -c 10000 $testdir/truncfile.$$.0 >$tmp.out 2>&1
+then
+    out=`cat $tmp.out`
+    echo "truncfile returned $? : \"$out\""
+else
+    echo "OK"
+fi
+
+exit

@@ -1,0 +1,35 @@
+#!/bin/bash
+#
+# Copyright (c) 2003-2004 Silicon Graphics, Inc.  All Rights Reserved.
+#
+# This program is free software; you can redistribute it and/or
+# modify it under the terms of the GNU General Public License as
+# published by the Free Software Foundation.
+#
+# This program is distributed in the hope that it would be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU General Public License for more details.
+#
+# You should have received a copy of the GNU General Public License
+# along with this program; if not, write the Free Software Foundation,
+# Inc.,  51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
+#
+if ! . ./common.config
+then
+    echo "check: failed to source common.config"
+    exit 1
+fi
+
+[ "$USE_EXTERNAL"    = yes ] || USE_EXTERNAL=no
+[ "$USE_LBD_PATCH"   = yes ] || USE_LBD_PATCH=no
+[ "$USE_BIG_LOOPFS"  = yes ] || USE_BIG_LOOPFS=no
+[ "$USE_ATTR_SECURE" = yes ] || USE_ATTR_SECURE=no
+[ -z "$FSTYP" ] && FSTYP="xfs"
+
+cat <<EOF
+TEST: DIR=$TEST_DIR DEV=$TEST_DEV rt=[$TEST_RTDEV] log=[$TEST_LOGDEV]
+TAPE: dev=[$TAPE_DEV] rmt=[$RMT_TAPE_DEV] rmtirix=[$RMT_TAPE_USER@$RMT_IRIXTAPE_DEV]
+SCRATCH: MNT=$SCRATCH_MNT DEV=$SCRATCH_DEV rt=[$SCRATCH_RTDEV] log=[$SCRATCH_LOGDEV]
+VARIABLES: external=$USE_EXTERNAL largeblk=$USE_LBD_PATCH fstyp=$FSTYP bigloopfs=$USE_BIG_LOOPFS attrsecure=$USE_ATTR_SECURE
+EOF

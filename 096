@@ -1,0 +1,152 @@
+#! /bin/bash
+# FS QA Test No. 096
+#
+# test out mkfs_xfs output on IRIX/Linux and some of its error handling
+# ensure pv#920679 is addressed
+#
+#-----------------------------------------------------------------------
+# Copyright (c) 2000-2004 Silicon Graphics, Inc.  All Rights Reserved.
+#
+# This program is free software; you can redistribute it and/or
+# modify it under the terms of the GNU General Public License as
+# published by the Free Software Foundation.
+#
+# This program is distributed in the hope that it would be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU General Public License for more details.
+#
+# You should have received a copy of the GNU General Public License
+# along with this program; if not, write the Free Software Foundation,
+# Inc.,  51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
+#
+#-----------------------------------------------------------------------
+#
+# creator
+owner=tes@sgi.com
+
+seq=`basename $0`
+echo "QA output created by $seq"
+
+here=`pwd`
+tmp=/tmp/$$
+status=1	# failure is the default!
+trap "_cleanup; exit \$status" 0 1 2 3 15
+
+_cleanup()
+{
+    cd /
+    rm -f $tmp.*
+}
+
+# get standard environment, filters and checks
+. ./common.rc
+. ./common.filter
+. ./common.log
+
+#
+# filter out counts which will vary
+#   - extsz, blocks, agsize, agcount, device name, rtextents
+# filter out differences between linux and irix:
+#   - sectsz on Linux
+#   - mmr, mixed-case on IRIX
+#   - lazy-count on IRIX
+#   - inode-paths on IRIX
+#   - trailing spaces on Linux but not on IRIX
+#
+# Example output:
+#  meta-data=DEV isize=256    agcount=N, agsize=N blks
+#  data     =                       bsize=4096   blocks=N, imaxpct=25
+#           =                       sunit=65     swidth=65 blks, unwritten=1
+#  naming   =version 2              bsize=4096
+#  log      =internal log           bsize=4096   blocks=N, version=1
+#           =                       sunit=0 blks
+#  realtime =none                   extsz=65536  blocks=N, rtextents=N
+#
+_mkfs_filter()
+{
+   tee -a $seq.full | \
+   sed \
+	-e 's/extsz=[0-9][0-9]*[ ]*/extsz=N, /' \
+	-e 's/blocks=[0-9][0-9]*/blocks=N/' \
+	-e 's/imaxpct=[0-9][0-9]*/imaxpct=N/' \
+	-e 's/agsize=[0-9][0-9]*/agsize=N/' \
+	-e 's/agcount=[0-9][0-9]*/agcount=N/' \
+        -e 's/swidth=[0-9][0-9]* blks$/&, unwritten=1/' \
+	-e 's/rtextents=[0-9][0-9]*/rtextents=N/' \
+	-e 's/meta-data=[^ ]*/meta-data=DEV/' \
+        -e 's/ *isize/ isize/' \
+	-e '/ *= *sectsz=[0-9][0-9]* *attr=[0-9][0-9]*.*$/d' \
+	-e '/ *= *mmr=[0-9][0-9]* *$/d' \
+	-e 's/ *mixed-case=[YN]//' \
+	-e 's/ *ascii-ci=[01]//' \
+	-e 's/sectsz=[0-9][0-9]* *//' \
+	-e 's/, lazy-count.*//' \
+	-e '/inode-paths/d' \
+	-e 's/\(log[ 	]*=\).*bsize/\1LOG                    bsize/' \
+	-e 's/\(realtime[ 	]*=\).*extsz/\1REALTIME               extsz/' \
+	-e 's/ *$//' \
+   | grep -v parent
+}
+
+# real QA test starts here
+rm -f $seq.full
+
+# Modify as appropriate.
+_supported_fs xfs
+_supported_os IRIX Linux
+_require_scratch
+_require_v2log
+
+# choose .out file based on internal/external log
+rm -f $seq.out
+if [ "$USE_EXTERNAL" = yes ]; then
+	ln -s $seq.external $seq.out
+else
+	ln -s $seq.internal $seq.out
+fi
+
+# maximum log record size
+max_lr_size=`expr 256 \* 1024`
+
+big_su=`expr $max_lr_size + 4096`
+
+#
+# Test out various mkfs param combinations
+#
+cat >$tmp.seq.params <<EOF
+# su too big but must be a multiple of fs block size too
+  -l version=2,su=`expr $max_lr_size + 512`
+# test log stripe greater than LR size
+  -l version=2,su=$big_su
+# same test but get log stripe from data stripe
+  -l version=2 -d su=$big_su,sw=1
+# test out data stripe
+  -l version=1 -d su=$big_su,sw=1
+# test out data stripe the same but using sunit & swidth
+  -l version=1 -d sunit=`expr $big_su / 512`,swidth=`expr $big_su / 512`
+EOF
+
+
+#
+# call mkfs in a loop for various params
+#
+echo ""
+cat $tmp.seq.params \
+| while read mkfs
+do
+    if echo $mkfs | grep -q '^#'; then
+        # print out header & ignore comment
+	echo $mkfs
+	continue
+    fi
+    echo "--- mkfs=$mkfs ---"
+    export MKFS_OPTIONS="$mkfs"
+    _scratch_mkfs_xfs | _mkfs_filter
+    echo ""
+    echo ""
+done
+
+# success, all done
+status=0
+exit

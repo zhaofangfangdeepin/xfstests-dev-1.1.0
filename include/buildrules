@@ -1,0 +1,102 @@
+#
+# Copyright (c) 1999, 2001-2003 Silicon Graphics, Inc.  All Rights Reserved.
+#
+ifndef _BUILDRULES_INCLUDED_
+_BUILDRULES_INCLUDED_ = 1
+
+include $(TOPDIR)/include/builddefs
+
+depend: $(addsuffix -depend,$(SUBDIRS))
+
+%-depend:
+	$(Q)$(MAKE) $(MAKEOPTS) -q -C $* depend || \
+	    $(MAKE) $(MAKEOPTS) -C $* depend
+
+clean clobber : $(addsuffix -clean,$(SUBDIRS))
+	$(Q)rm -f $(DIRT)
+	$(Q)rm -fr .libs .ltdep .dep
+
+%-clean:
+	@echo "Cleaning $*"
+	$(Q)$(MAKE) $(MAKEOPTS) -q -C $* clean || \
+	    $(MAKE) $(MAKEOPTS) -C $* clean
+
+# Never blow away subdirs
+ifdef SUBDIRS
+.PRECIOUS: $(SUBDIRS)
+.PHONY: $(SUBDIRS)
+
+$(SUBDIRS):
+	@echo "Building $@"
+	$(Q)$(MAKE) $(MAKEOPTS) -q -C $@ || $(MAKE) $(MAKEOPTS) -C $@
+endif
+
+#
+# Standard targets
+#
+
+ifdef LTCOMMAND
+$(LTCOMMAND) : $(SUBDIRS) $(OBJECTS) $(LTDEPENDENCIES)
+	@echo "    [LD] $*"
+	$(Q)$(LTLINK) -o $@ $(LDFLAGS) $(OBJECTS) $(LDLIBS)
+endif
+
+ifdef LTLIBRARY
+$(LTLIBRARY) : $(SUBDIRS) $(LTOBJECTS)
+	@echo "    [LD] $*"
+	$(Q)$(LTLINK) $(LTLDFLAGS) -o $(LTLIBRARY) $(LTOBJECTS) $(LTLIBS)
+
+%.lo: %.c
+	@echo "    [CC] $@"
+	$(Q)$(LTCOMPILE) -c $<
+else
+%.o: %.c
+	@echo "    [CC] $@"
+	$(Q)$(CC) $(CFLAGS) -c $<
+
+endif
+
+ifdef POTHEAD
+%.pot: $(XGETTEXTFILES)
+	$(XGETTEXT) --language=C --keyword=_ -o $@ $(XGETTEXTFILES)
+
+# Generate temp .po files, to check whether translations need updating.
+# Not by default, due to gettext output differences between versions.
+%.po: $(POTHEAD)
+#	$(MSGMERGE) -o $@.tmpo $@ $(POTHEAD)
+#	if ! diff $@.tmpo $@ >/dev/null; then echo "$@ dated, see $@.tmpo"; fi
+
+%.mo: %.po
+	$(MSGFMT) -o $@ $<
+endif
+
+source :
+	$(SOURCE_MAKERULE)
+
+endif # _BUILDRULES_INCLUDED_
+
+$(_FORCE):
+
+# dependency build is automatic, relies on gcc -MM to generate.
+.PHONY : depend
+
+MAKEDEP := $(MAKEDEPEND) $(CFLAGS)
+
+.ltdep: $(CFILES) $(HFILES)
+	@echo "    [LTDEP]"
+	$(Q)if [ -n "$$( echo $(CFILES))" ]; then \
+	    $(MAKEDEP) $(CFILES) | \
+	    $(SED) -e 's,^\([^:]*\)\.o,\1.lo,' > .ltdep; \
+	else \
+	    cp /dev/null .ltdep; \
+	fi
+
+.dep: $(CFILES) $(HFILES)
+	@echo "    [DEP]"
+	$(Q)if [ -n "$$( echo $(CFILES))" ]; then \
+	    $(MAKEDEP) $(CFILES) | \
+	    $(SED) -e 's,^\([^:]*\)\.o,\1,' > .dep; \
+	else \
+	    cp /dev/null .dep; \
+	fi
+

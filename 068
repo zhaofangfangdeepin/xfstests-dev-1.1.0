@@ -1,0 +1,122 @@
+#! /bin/bash
+# FSQA Test No. 068
+#
+# Test case to reproduce xfs_freeze hang under filsystem load.
+# The fail case for this test is a hang on an xfs_freeze.
+#
+#-----------------------------------------------------------------------
+# Copyright (c) 2000-2005 Silicon Graphics, Inc.  All Rights Reserved.
+#
+# This program is free software; you can redistribute it and/or
+# modify it under the terms of the GNU General Public License as
+# published by the Free Software Foundation.
+#
+# This program is distributed in the hope that it would be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU General Public License for more details.
+#
+# You should have received a copy of the GNU General Public License
+# along with this program; if not, write the Free Software Foundation,
+# Inc.,  51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
+#
+#-----------------------------------------------------------------------
+#
+# creator
+owner=ajones@sgi.com
+
+seq=`basename $0`
+echo "QA output created by $seq"
+
+here=`pwd`
+tmp=/tmp/$$
+status=0	# success is the default!
+
+ITERATIONS=10
+
+_cleanup()
+{
+    cd /
+    _cleanup_testdir
+
+    trap 0 1 2 3 15
+    exit $status
+}
+
+trap "_cleanup" 0 1 2 3 15
+
+
+# get standard environment, filters and checks
+. ./common.rc
+. ./common.filter
+
+# real QA test starts here
+_supported_fs xfs
+_supported_os Linux IRIX
+
+_require_scratch
+
+echo "*** init FS"
+
+rm -f $seq.full
+umount $SCRATCH_DEV >/dev/null 2>&1
+echo "*** MKFS ***"                         >>$seq.full
+echo ""                                     >>$seq.full
+_scratch_mkfs_xfs                           >>$seq.full 2>&1 \
+    || _fail "mkfs failed"
+_scratch_mount                              >>$seq.full 2>&1 \
+    || _fail "mount failed"
+
+touch $tmp.running
+
+
+# start fsstress loop in a background block
+{
+    STRESS_DIR="$SCRATCH_MNT/fsstress_test_dir"
+    mkdir "$STRESS_DIR"
+
+    procs=2
+    nops=200
+    while [ -f "$tmp.running" ]
+      do
+      #	-w ensures that the only ops are ones which cause write I/O
+      $FSSTRESS_PROG -d $STRESS_DIR -w -p $procs -n $nops $FSSTRESS_AVOID \
+	  > /dev/null 2>&1
+    done
+
+    rm -r $STRESS_DIR/*
+    rmdir $STRESS_DIR
+} &
+
+i=0
+let ITERATIONS=$ITERATIONS-1
+
+echo | tee -a $seq.full
+while [ $i -le $ITERATIONS ]
+do
+        echo "*** iteration: $i" | tee -a $seq.full
+	echo "*** freezing \$SCRATCH_MNT" | tee -a $seq.full
+	xfs_freeze -f "$SCRATCH_MNT" | tee -a $seq.full
+	[ $? != 0 ] && echo xfs_freeze -f "$SCRATCH_MNT" failed | \
+	    tee -a $seq.full
+	sleep 2
+
+	echo "*** thawing  \$SCRATCH_MNT" | tee -a $seq.full
+	xfs_freeze -u "$SCRATCH_MNT" | tee -a $seq.full
+	[ $? != 0 ] && echo xfs_freeze -u "$SCRATCH_MNT" failed | \
+	    tee -a $seq.full
+	sleep 2
+
+	echo  | tee -a $seq.full
+	let i=$i+1
+done
+
+# stop fsstress iterations
+rm $tmp.running
+
+# wait for fsstresses to finish
+wait
+
+_check_scratch_fs
+
+exit 1
